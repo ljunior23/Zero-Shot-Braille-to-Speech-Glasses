@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phone IMU Recorder</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            max-width: 500px;
+            width: 100%;
+        }
+        h1 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .instructions {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .instructions ol {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        .status {
+            text-align: center;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-weight: bold;
+            font-size: 18px;
+        }
+        .status.ready {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.recording {
+            background: #f8d7da;
+            color: #721c24;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        button {
+            padding: 15px;
+            font-size: 16px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: bold;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        .btn-primary:hover:not(:disabled) {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-danger:hover:not(:disabled) {
+            background: #c82333;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(220, 53, 69, 0.4);
+        }
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        .btn-success:hover:not(:disabled) {
+            background: #218838;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(40, 167, 69, 0.4);
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-box {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        .stat-value {
+            font-size: 28px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .live-data {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        .live-data div {
+            margin: 5px 0;
+        }
+        .warning {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+        .warning strong {
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 Phone IMU Recorder</h1>
+        <div class="subtitle">Accelerometer + Gyroscope @ 200Hz</div>
+
+        <div class="instructions">
+            <strong>Instructions:</strong>
+            <ol>
+                <li>Place phone FLAT on table</li>
+                <li>Click "Request Permission" (iOS only)</li>
+                <li>Click "Start Recording"</li>
+                <li>Tap table with finger (vibrations captured)</li>
+                <li>Keep phone still - only table vibrations matter</li>
+                <li>Click "Stop" when done</li>
+                <li>Click "Download" to save data</li>
+            </ol>
+        </div>
+
+        <div class="warning">
+            <strong>⚠️ Important:</strong> Phone must stay on the same surface you're tapping. The accelerometer picks up vibrations from your finger taps.
+        </div>
+
+        <div class="status ready" id="status">Ready to start</div>
+
+        <div class="controls">
+            <button class="btn-primary" onclick="requestPermission()" id="permissionBtn">
+                Request Permission (iOS)
+            </button>
+            <button class="btn-success" onclick="startRecording()" id="startBtn" disabled>
+                Start Recording
+            </button>
+            <button class="btn-danger" onclick="stopRecording()" id="stopBtn" disabled>
+                Stop Recording
+            </button>
+            <button class="btn-primary" onclick="downloadData()" id="downloadBtn" disabled>
+                Download Data
+            </button>
+        </div>
+
+        <div class="stats">
+            <div class="stat-box">
+                <div class="stat-label">Samples</div>
+                <div class="stat-value" id="sampleCount">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Duration</div>
+                <div class="stat-value" id="duration">0s</div>
+            </div>
+        </div>
+
+        <div class="live-data">
+            <div><strong>Live IMU Data:</strong></div>
+            <div>Accel X: <span id="accX">0.00</span> m/s²</div>
+            <div>Accel Y: <span id="accY">0.00</span> m/s²</div>
+            <div>Accel Z: <span id="accZ">0.00</span> m/s²</div>
+            <div>Gyro X: <span id="gyrX">0.00</span> rad/s</div>
+            <div>Gyro Y: <span id="gyrY">0.00</span> rad/s</div>
+            <div>Gyro Z: <span id="gyrZ">0.00</span> rad/s</div>
+            <div>Sample Rate: <span id="sampleRate">0</span> Hz</div>
+        </div>
+    </div>
+
+    <script>
+        let recording = false;
+        let recordedData = [];
+        let startTime;
+        let sampleCount = 0;
+        let lastSampleTime = 0;
+        let sampleRates = [];
+
+        // Request permission (required on iOS 13+)
+        async function requestPermission() {
+            try {
+                if (typeof DeviceMotionEvent.requestPermission === 'function') {
+                    const permission = await DeviceMotionEvent.requestPermission();
+                    if (permission === 'granted') {
+                        initializeSensors();
+                        updateStatus('Permission granted! Ready to record.', 'ready');
+                        document.getElementById('startBtn').disabled = false;
+                        document.getElementById('permissionBtn').disabled = true;
+                    } else {
+                        alert('Permission denied. Please allow motion sensors.');
+                    }
+                } else {
+                    // Non-iOS or older iOS - permission not needed
+                    initializeSensors();
+                    updateStatus('Sensors initialized! Ready to record.', 'ready');
+                    document.getElementById('startBtn').disabled = false;
+                    document.getElementById('permissionBtn').disabled = true;
+                }
+            } catch (error) {
+                alert('Error requesting permission: ' + error);
+            }
+        }
+
+        // Initialize sensors
+        function initializeSensors() {
+            window.addEventListener('devicemotion', handleMotion);
+        }
+
+        // Handle motion events
+        function handleMotion(event) {
+            const currentTime = Date.now();
+
+            // Calculate sample rate
+            if (lastSampleTime > 0) {
+                const rate = 1000 / (currentTime - lastSampleTime);
+                sampleRates.push(rate);
+                if (sampleRates.length > 10) {
+                    sampleRates.shift();
+                }
+                const avgRate = sampleRates.reduce((a, b) => a + b) / sampleRates.length;
+                document.getElementById('sampleRate').textContent = avgRate.toFixed(0);
+            }
+            lastSampleTime = currentTime;
+
+            // Get accelerometer data
+            const acc = event.acceleration || event.accelerationIncludingGravity;
+            const accX = acc ? acc.x || 0 : 0;
+            const accY = acc ? acc.y || 0 : 0;
+            const accZ = acc ? acc.z || 0 : 0;
+
+            // Get gyroscope data
+            const rot = event.rotationRate;
+            const gyrX = rot ? rot.alpha || 0 : 0;
+            const gyrY = rot ? rot.beta || 0 : 0;
+            const gyrZ = rot ? rot.gamma || 0 : 0;
+
+            // Update display
+            document.getElementById('accX').textContent = accX.toFixed(2);
+            document.getElementById('accY').textContent = accY.toFixed(2);
+            document.getElementById('accZ').textContent = accZ.toFixed(2);
+            document.getElementById('gyrX').textContent = gyrX.toFixed(2);
+            document.getElementById('gyrY').textContent = gyrY.toFixed(2);
+            document.getElementById('gyrZ').textContent = gyrZ.toFixed(2);
+
+            // Record if active
+            if (recording) {
+                const timestamp = (currentTime - startTime) / 1000;
+                
+                recordedData.push({
+                    timestamp: timestamp,
+                    acceleration: {
+                        x: accX,
+                        y: accY,
+                        z: accZ
+                    },
+                    rotation: {
+                        alpha: gyrX,
+                        beta: gyrY,
+                        gamma: gyrZ
+                    }
+                });
+
+                sampleCount++;
+                document.getElementById('sampleCount').textContent = sampleCount.toLocaleString();
+                document.getElementById('duration').textContent = timestamp.toFixed(1) + 's';
+            }
+        }
+
+        // Start recording
+        function startRecording() {
+            recording = true;
+            startTime = Date.now();
+            sampleCount = 0;
+            recordedData = [];
+
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+            document.getElementById('downloadBtn').disabled = true;
+
+            updateStatus('🔴 RECORDING - Tap the table!', 'recording');
+        }
+
+        // Stop recording
+        function stopRecording() {
+            recording = false;
+
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('downloadBtn').disabled = false;
+
+            updateStatus(`Recording stopped. ${sampleCount} samples captured.`, 'ready');
+        }
+
+        // Download data
+        function downloadData() {
+            const dataStr = JSON.stringify(recordedData, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `imu_data_${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+
+            alert(`Downloaded ${sampleCount} IMU samples!\n\nNext: Align with webcam data using preprocessing scripts.`);
+        }
+
+        // Update status
+        function updateStatus(message, type) {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = `status ${type}`;
+        }
+
+        // Initialize on load
+        window.onload = () => {
+            // Check if motion sensors are available
+            if (!window.DeviceMotionEvent) {
+                alert('Motion sensors not available on this device!');
+                return;
+            }
+
+            // For non-iOS devices, enable immediately
+            if (typeof DeviceMotionEvent.requestPermission !== 'function') {
+                document.getElementById('permissionBtn').textContent = 'Initialize Sensors';
+            }
+
+            console.log('IMU recorder ready. Click button to start.');
+        };
+    </script>
+</body>
+</html>
