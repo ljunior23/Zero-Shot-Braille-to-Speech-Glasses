@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webcam Finger Tracking Recorder</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f0f0f0;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .video-container {
+            position: relative;
+            max-width: 640px;
+            margin: 20px auto;
+        }
+        #videoFeed {
+            width: 100%;
+            border: 2px solid #007bff;
+            border-radius: 5px;
+        }
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+        }
+        .controls {
+            text-align: center;
+            margin: 20px 0;
+        }
+        button {
+            padding: 12px 24px;
+            margin: 5px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #0056b3;
+        }
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-danger:hover {
+            background: #c82333;
+        }
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        .btn-success:hover {
+            background: #218838;
+        }
+        .status {
+            text-align: center;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .status.recording {
+            background: #ffebee;
+            color: #c62828;
+        }
+        .status.ready {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        .instructions {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .instructions h3 {
+            margin-top: 0;
+        }
+        .sentence-display {
+            font-size: 24px;
+            text-align: center;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            margin: 20px 0;
+            min-height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .stat-box {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/cam-era_utils.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>📹 Webcam Finger Tracking Recorder</h1>
+        
+        <div class="instructions">
+            <h3>Instructions:</h3>
+            <ol>
+                <li>Click "Start Camera" to begin</li>
+                <li>Position your hand so the webcam can see your index finger</li>
+                <li>Click "Load Sentences" to load training text</li>
+                <li>Read each sentence while tapping your finger on the table</li>
+                <li>System tracks your fingertip position (x, y) @ 30fps</li>
+                <li>Click "Download Data" when complete</li>
+            </ol>
+            <p><strong>Tip:</strong> Keep movements natural, as if you're reading Braille</p>
+        </div>
+
+        <div class="status ready" id="status">Ready to start</div>
+
+        <div class="controls">
+            <button class="btn-primary" onclick="startCamera()">Start Camera</button>
+            <button class="btn-primary" onclick="loadSentences()">Load Sentences</button>
+            <button class="btn-success" onclick="startRecording()" id="recordBtn" disabled>Start Recording</button>
+            <button class="btn-danger" onclick="stopRecording()" id="stopBtn" disabled>Stop Recording</button>
+            <button class="btn-primary" onclick="downloadData()" id="downloadBtn" disabled>Download Data</button>
+        </div>
+
+        <div class="stats">
+            <div class="stat-box">
+                <div class="stat-label">Sentences Loaded</div>
+                <div class="stat-value" id="sentenceCount">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Frames Recorded</div>
+                <div class="stat-value" id="frameCount">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Duration</div>
+                <div class="stat-value" id="duration">0s</div>
+            </div>
+        </div>
+
+        <div class="sentence-display" id="sentenceDisplay">
+            Sentences will appear here...
+        </div>
+
+        <div class="video-container">
+            <video id="videoFeed" autoplay playsinline></video>
+            <canvas id="canvas"></canvas>
+        </div>
+    </div>
+
+    <script>
+        let camera;
+        let hands;
+        let recording = false;
+        let recordedData = [];
+        let sentences = [];
+        let currentSentence = 0;
+        let startTime;
+        let frameCount = 0;
+
+        // Initialize MediaPipe Hands
+        function initializeHands() {
+            hands = new Hands({
+                locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                }
+            });
+
+            hands.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+
+            hands.onResults(onResults);
+        }
+
+        // Process hand tracking results
+        function onResults(results) {
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+            const video = document.getElementById('videoFeed');
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                
+                // Get index finger tip (landmark 8)
+                const indexTip = landmarks[8];
+                const x = indexTip.x * canvas.width;
+                const y = indexTip.y * canvas.height;
+
+                // Draw hand landmarks
+                drawConnectors(ctx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
+                drawLandmarks(ctx, landmarks, {color: '#FF0000', lineWidth: 1});
+
+                // Highlight index finger tip
+                ctx.beginPath();
+                ctx.arc(x, y, 10, 0, 2 * Math.PI);
+                ctx.fillStyle = '#FF0000';
+                ctx.fill();
+
+                // Record data if recording
+                if (recording) {
+                    const timestamp = (Date.now() - startTime) / 1000;
+                    recordedData.push({
+                        timestamp: timestamp,
+                        x: indexTip.x,
+                        y: indexTip.y,
+                        sentence_id: currentSentence,
+                        sentence: sentences[currentSentence] || ""
+                    });
+
+                    frameCount++;
+                    document.getElementById('frameCount').textContent = frameCount;
+                    document.getElementById('duration').textContent = timestamp.toFixed(1) + 's';
+                }
+            }
+        }
+
+        // Start camera
+        async function startCamera() {
+            try {
+                const video = document.getElementById('videoFeed');
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 640, height: 480 } 
+                });
+                video.srcObject = stream;
+
+                initializeHands();
+
+                camera = new Camera(video, {
+                    onFrame: async () => {
+                        await hands.send({image: video});
+                    },
+                    width: 640,
+                    height: 480
+                });
+                camera.start();
+
+                updateStatus('Camera started', 'ready');
+                document.getElementById('recordBtn').disabled = false;
+            } catch (error) {
+                alert('Camera access denied: ' + error);
+            }
+        }
+
+        // Load sentences
+        async function loadSentences() {
+            // In production, this would load from the sentences file
+            // For demo, using sample sentences
+            sentences = [
+                "The quick brown fox jumps over the lazy dog",
+                "She sells seashells by the seashore",
+                "How much wood would a woodchuck chuck",
+                "Peter Piper picked a peck of pickled peppers",
+                "A journey of a thousand miles begins with a single step"
+            ];
+
+            document.getElementById('sentenceCount').textContent = sentences.length;
+            document.getElementById('sentenceDisplay').textContent = sentences[0];
+            alert(`Loaded ${sentences.length} sentences. Click Start Recording when ready.`);
+        }
+
+        // Start recording
+        function startRecording() {
+            if (sentences.length === 0) {
+                alert('Please load sentences first!');
+                return;
+            }
+
+            recording = true;
+            startTime = Date.now();
+            frameCount = 0;
+            recordedData = [];
+            currentSentence = 0;
+
+            document.getElementById('recordBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+            updateStatus('RECORDING - Tap your finger while reading', 'recording');
+
+            displayCurrentSentence();
+        }
+
+        // Stop recording
+        function stopRecording() {
+            recording = false;
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('downloadBtn').disabled = false;
+            updateStatus('Recording stopped', 'ready');
+        }
+
+        // Download recorded data
+        function downloadData() {
+            const dataStr = JSON.stringify(recordedData, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `finger_tracking_${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+
+            alert('Data downloaded! Now collect phone IMU data.');
+        }
+
+        // Display current sentence
+        function displayCurrentSentence() {
+            if (currentSentence < sentences.length) {
+                document.getElementById('sentenceDisplay').textContent = sentences[currentSentence];
+            } else {
+                updateStatus('All sentences complete!', 'ready');
+                stopRecording();
+            }
+        }
+
+        // Next sentence
+        function nextSentence() {
+            if (recording) {
+                currentSentence++;
+                displayCurrentSentence();
+            }
+        }
+
+        // Update status message
+        function updateStatus(message, type) {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = `status ${type}`;
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && recording) {
+                nextSentence();
+            }
+        });
+
+        // Initialize
+        console.log('Webcam recorder ready. Click "Start Camera" to begin.');
+    </script>
+</body>
+</html>
