@@ -1,7 +1,7 @@
 # 🎯 Zero-Shot-Braille to Speech Glasses
 ## $0 Hardware | Self-Supervised Learning | Live Browser Demo
 
-> **Read ANY text by tapping your finger—no Braille, no labels, no hardware purchase**
+> **Read ANY text by tapping your finger, no labels, no hardware purchase**
 
 Uses only built-in sensors (webcam + phone IMU) to learn finger motion → speech alignment through contrastive learning. Zero training labels. Zero hardware cost. Zero-shot transfer to unseen text.
 
